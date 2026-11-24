@@ -9,7 +9,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%235c388d'/%3E%3Cpath d='M8 9h16l-8 15z' fill='%23fff'/%3E%3C/svg%3E">
 <!--
   ============================================================================
-   VIDEOMARCADOR · ESTADIO PEDRO ESCARTÍN                       versión 1.2.0
+   VIDEOMARCADOR · ESTADIO PEDRO ESCARTÍN                       versión 1.3.0
   ----------------------------------------------------------------------------
    Documento único: pantalla del estadio + panel de control.
      index.html            → pantalla (lo que se ve en el videomarcador)
@@ -432,6 +432,20 @@ body.mode-display { background: var(--violet); overflow: hidden; cursor: none; -
 
 /* --------------------------------- DEPURACIÓN --------------------------------- */
 .debug { position: absolute; left: 0; right: 0; bottom: 0; z-index: 99; font: 11px/1.4 ui-monospace, Menlo, Consolas, monospace; color: #fff; background: rgba(0, 0, 0, .62); padding: 3px 8px; white-space: nowrap; overflow: hidden; }
+
+/* ------------------------- MODO MINECRAFT (MCEF) -------------------------
+   Cortinilla por paneles: en cada paso se enciende o apaga 1/8 de la imagen,
+   en lugar de barrer la pantalla completa 60 veces por segundo.            */
+.wipe .w-slat { display: none; top: 0; bottom: 0; width: 12.6%; -webkit-transform: none; transform: none; background: var(--violet-dd); opacity: 0; }
+.perf-mc .wipe i.w-band, .perf-mc .wipe i.w-edge { display: none; }
+.perf-mc .wipe .w-slat { display: block; }
+.perf-mc .wipe.w-in, .perf-mc .wipe.w-out { animation: none; transform: none; }
+.perf-mc .wipe.w-in .w-slat { animation: slatOn .01s steps(1, end) both; animation-delay: var(--di); }
+.perf-mc .wipe.w-out .w-slat { opacity: 1; animation: slatOff .01s steps(1, end) both; animation-delay: var(--do); }
+@keyframes slatOn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slatOff { from { opacity: 1; } to { opacity: 0; } }
+/* destello del gol: mismo golpe de luz en 3 pasos en vez de 11 imágenes completas */
+.perf-mc .g-flash { animation-duration: .2s; }
 
 </style>
 <style id="vm-panel">
@@ -863,6 +877,8 @@ body.has-ov .ln-btns .btn.ghost { border-color: rgba(255, 255, 255, .3); color: 
 .hint code { background: var(--s2); padding: 1px 5px; border-radius: 4px; color: #ddd0f2; }
 @media (min-width: 1100px) { .col-full2 { grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr) minmax(0, 1fr); } }
 
+@media (min-width: 1100px) { .tools { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
 </style>
 </head>
 <body>
@@ -874,7 +890,7 @@ body.has-ov .ln-btns .btn.ghost { border-color: rgba(255, 255, 255, .3); color: 
    navegadores integrados antiguos (pantallas de Minecraft con MCEF, TV, etc.)
    ========================================================================== */
 var VM = window.VM = window.VM || {};
-VM.VERSION = "1.2.0";
+VM.VERSION = "1.3.0";
 
 (function () {
   'use strict';
@@ -1164,7 +1180,7 @@ VM.VERSION = "1.2.0";
     var du = U.isObj(raw.duraciones) ? raw.duraciones : {};
     c.duraciones = {};
     Object.keys(D.duraciones).forEach(function (k) { c.duraciones[k] = num(du[k], D.duraciones[k], 0, 3600); });
-    c.rendimiento = ['normal', 'bajo', 'auto'].indexOf(String(raw.rendimiento || '').toLowerCase()) >= 0 ? String(raw.rendimiento).toLowerCase() : 'normal';
+    c.rendimiento = ['normal', 'bajo', 'minecraft', 'auto'].indexOf(String(raw.rendimiento || '').toLowerCase()) >= 0 ? String(raw.rendimiento).toLowerCase() : 'normal';
     var co = U.isObj(raw.conexion) ? raw.conexion : {};
     var fb = U.isObj(co.firebase) ? co.firebase : {};
     c.conexion = {
@@ -1935,7 +1951,7 @@ VM.VERSION = "1.2.0";
       rol: 'pantalla', w: window.innerWidth, h: window.innerHeight,
       dpr: window.devicePixelRatio || 1, cfg: VM.config.hash, rev: S.state ? S.state.rev : -1,
       ver: VM.VERSION, ua: (navigator.userAgent.match(/(Chrome|Firefox|Safari|Edg)\/[\d.]+/) || [''])[0],
-      fps: VM.perf.fpsAvg, bajo: VM.perf.low, modo: VM.perf.mode, forzado: VM.perf.forced || ''
+      fps: VM.perf.fpsAvg, bajo: VM.perf.low, nivel: VM.perf.level, limitador: VM.perf.driving(), modo: VM.perf.mode, forzado: VM.perf.forced || ''
     });
   }
   S.sendPresence = sendPresence;
@@ -2321,6 +2337,29 @@ VM.VERSION = "1.2.0";
     return { level: chosen.lv, size: finalSize, text: chosen.t };
   };
 
+  /* Lote: ajusta muchas cajas de una línea con una sola medición (escribe
+     todo → mide todo → aplica). Mismo resultado que F.line caja a caja pero sin
+     forzar una maquetación por cada nombre (cambios de escena más rápidos). */
+  F.batch = function (boxes, texts, max) {
+    var spans = boxes.map(span);
+    spans.forEach(function (s, i) { s.textContent = texts[i]; s.classList.remove('is-2l'); s.style.fontSize = max + 'px'; });
+    var avails = boxes.map(function (b) { return b.clientWidth; });
+    var ws = spans.map(function (s) { return s.offsetWidth; });
+    var sizes = ws.map(function (w, i) {
+      if (!avails[i]) return null;
+      return Math.floor((w > avails[i] ? max * avails[i] / w : max) * 100) / 100;
+    });
+    spans.forEach(function (s, i) { if (sizes[i] !== null) s.style.fontSize = sizes[i] + 'px'; });
+    /* comprobación final (redondeos de la fuente): solo las que aún sobresalgan */
+    for (var g = 0; g < 40; g++) {
+      var over = [];
+      spans.forEach(function (s, i) { if (sizes[i] !== null && s.offsetWidth > avails[i] + 0.5) over.push(i); });
+      if (!over.length) break;
+      over.forEach(function (i) { sizes[i] *= 0.97; spans[i].style.fontSize = sizes[i] + 'px'; });
+    }
+    return sizes;
+  };
+
   /* Escala un bloque con contenido rico (varias palabras animadas) */
   F.scaleTo = function (inner, avail, max) {
     inner.style.fontSize = max + 'px';
@@ -2338,6 +2377,17 @@ VM.VERSION = "1.2.0";
     return box;
   };
   /* Las cajas aún no insertadas en la página se conservan; las retiradas se olvidan */
+  /* Solo las cajas dentro de 'root' (al montar una escena no hace falta medir
+     el resto de la página: menos cálculos de maquetación, cambio más rápido) */
+  F.refitIn = function (root) {
+    F.bound = F.bound.filter(function (b) { return U.connected(b) || !b._fitSeen; });
+    if (!root || !U.connected(root)) return;
+    F.bound.forEach(function (b) {
+      if (!root.contains(b) || !U.connected(b)) return;
+      b._fitSeen = true;
+      try { b._fitFn(b); } catch (e) { if (window.console) console.warn(e); }
+    });
+  };
   F.refitAll = function () {
     F.bound = F.bound.filter(function (b) { return U.connected(b) || !b._fitSeen; });
     F.bound.forEach(function (b) {
@@ -2412,40 +2462,55 @@ VM.VERSION = "1.2.0";
        al que se muestran (menos memoria y menos trabajo de dibujo).
      · Se espacian tareas en segundo plano (vigilancia de config.js,
        presencia, recálculo al redimensionar).
-   Modos: 'normal' · 'bajo' · 'auto' (mide los fotogramas durante las
-   animaciones y, si el navegador no llega, activa el modo por sí solo).
+   Modo 'minecraft' (MCEF y otros navegadores integrados en juegos): todo lo
+   anterior + limitador global de fotogramas (20 imágenes/s, bucles de fondo a
+   10), cortinilla por paneles (cada paso cambia solo 1/8 de la imagen) y
+   elementos animados en capas propias para no repintar.
+   Modos: 'normal' · 'bajo' · 'minecraft' · 'auto' (mide los fotogramas durante
+   las animaciones y sube de nivel por sí solo si el navegador no llega).
    Se elige desde el panel (afecta a todas las pantallas) o por pantalla con
-   ?rendimiento=bajo|normal|auto en su dirección.
+   ?rendimiento=bajo|minecraft|normal|auto en su dirección.
    ========================================================================== */
 (function () {
   'use strict';
   var U = VM.util;
-  var PF = VM.perf = U.emitter({ low: false, mode: 'normal', autoLow: false, fps: null, fpsAvg: null });
+  var PF = VM.perf = U.emitter({ low: false, mc: false, level: 'normal', mode: 'normal', autoLevel: 0, autoLow: false, fps: null, fpsAvg: null });
+  var MODES = ['normal', 'bajo', 'minecraft', 'auto'];
 
-  var forced = (U.params.rendimiento || '').toLowerCase();
-  if (['normal', 'bajo', 'auto'].indexOf(forced) < 0) forced = '';
+  function normMode(m) {
+    m = String(m || '').toLowerCase();
+    if (m === 'mcef' || m === 'mc') m = 'minecraft';
+    return MODES.indexOf(m) >= 0 ? m : '';
+  }
+  var forced = normMode(U.params.rendimiento);
   PF.forced = forced;
 
-  /* Modo efectivo: parámetro de la URL > ajuste del panel > config.js */
+  /* Nivel efectivo: 'normal' · 'bajo' · 'minecraft' (incluye todo lo de 'bajo')
+     Prioridad: parámetro de la URL > ajuste del panel > config.js */
   PF.apply = function (requested) {
-    var mode = forced || requested || 'normal';
-    if (['normal', 'bajo', 'auto'].indexOf(mode) < 0) mode = 'normal';
-    if (mode !== 'auto') PF.autoLow = false;
+    var mode = forced || normMode(requested) || 'normal';
+    if (mode !== 'auto') PF.autoLevel = 0;
     PF.mode = mode;
-    var low = mode === 'bajo' || (mode === 'auto' && PF.autoLow);
-    if (low !== PF.low) {
-      PF.low = low;
-      document.documentElement.classList.toggle('perf-low', low);
-      PF.emit('change', low);
+    var level = mode === 'auto' ? ['normal', 'bajo', 'minecraft'][PF.autoLevel] : mode;
+    PF.autoLow = PF.autoLevel > 0;
+    if (level !== PF.level) {
+      PF.level = level;
+      PF.low = level !== 'normal';
+      PF.mc = level === 'minecraft';
+      var r = document.documentElement;
+      r.classList.toggle('perf-low', PF.low);
+      r.classList.toggle('perf-mc', PF.mc);
+      if (PF.mc) drvStart(); else drvStop();
+      PF.emit('change', PF.low);
     }
-    return low;
+    return PF.low;
   };
 
-  /* Medición de fotogramas: solo mientras hay animaciones en pantalla, para
-     no despertar al navegador 60 veces por segundo sin necesidad. */
+  /* Medición de fotogramas: solo en modo automático y mientras hay animaciones
+     (el propio medidor cuesta, así que no se usa cuando no hace falta). */
   var raf = window.requestAnimationFrame || function (f) { return setTimeout(function () { f(Date.now()); }, 16); };
   var measuring = false, frames = 0, winStart = 0, samples = [];
-  function frame(t) {
+  function frame() {
     if (!measuring) return;
     frames++;
     var now = Date.now();
@@ -2456,29 +2521,127 @@ VM.VERSION = "1.2.0";
       PF.fps = Math.round(fps);
       PF.fpsAvg = Math.round(samples.reduce(function (x, y) { return x + y; }, 0) / samples.length);
       frames = 0; winStart = now;
-      /* Automático: media de los últimos 4 s por debajo de 38 fps → bajos recursos
-         (robusto ante pantallas que oscilan y ante un tirón aislado) */
+      /* Automático (media de los últimos 4 s, robusto ante oscilaciones y tirones aislados):
+         < 38 fps → bajos recursos; si aun así < 24 fps → modo Minecraft */
       var last = samples.slice(-4), avg = last.reduce(function (x, y) { return x + y; }, 0) / last.length;
-      if (PF.mode === 'auto' && !PF.autoLow && last.length >= 4 && avg < 38) {
-        PF.autoLow = true;
-        PF.apply(PF.mode);
-        PF.emit('auto');
+      if (PF.mode === 'auto' && last.length >= 4) {
+        var to = PF.autoLevel === 0 && avg < 38 ? 1 : (PF.autoLevel === 1 && avg < 24 ? 2 : 0);
+        if (to) {
+          PF.autoLevel = to; samples = [];
+          PF.apply(PF.mode);
+          PF.emit('auto');
+          if (to === 2) { measuring = false; return; }
+        }
       }
     }
     raf(frame);
   }
   PF.startMeasure = function () {
-    /* el propio medidor cuesta: solo se usa cuando hace falta decidir (modo automático) */
-    if (measuring || PF.mode !== 'auto' || PF.autoLow) return;
+    if (measuring || PF.mode !== 'auto' || PF.autoLevel >= 2) return;
     measuring = true; frames = 0; winStart = 0; samples = [];
     raf(frame);
   };
   PF.stopMeasure = function () { measuring = false; };
 
+  /* ------------------------------------------------------------------------
+     LIMITADOR GLOBAL DE FOTOGRAMAS (modo Minecraft)
+     Los navegadores integrados en el juego (MCEF) dibujan fuera de pantalla y
+     copian cada imagen nueva a una textura de Minecraft en el hilo del juego:
+     cuantas más imágenes y más superficie cambie, más tirones en el juego.
+     Aquí todas las animaciones (entradas, transiciones y bucles) se pausan y
+     se avanzan juntas desde un único reloj: 20 imágenes/s para lo que se mueve
+     una vez y 10 imágenes/s para los bucles de fondo. Cada animación conserva
+     su curva, su duración y su sincronía; solo cambia la frecuencia de dibujo.
+     Además los elementos animados se promueven a su propia capa para que el
+     navegador solo recoloque, sin volver a pintar texto ni gráficos.
+     ------------------------------------------------------------------------ */
+  var MC_FRAME = 50;          /* 20 imágenes/s */
+  var DRV = { on: false, timer: null, n: 0, map: null, done: null };
+  PF.canDrive = !!(document.getAnimations && window.Animation && window.WeakMap && window.WeakSet);
+  function promote(t, on) {
+    if (t && t.style) t.style.willChange = on ? 'transform, opacity' : '';
+  }
+  function drvSchedule(ms) {
+    if (!DRV.on) return;
+    clearTimeout(DRV.timer);
+    var now = (window.performance && performance.now) ? performance.now() : Date.now();
+    DRV.timer = setTimeout(drvTick, Math.max(1, ms - (now % MC_FRAME)));
+  }
+  function drvTick() {
+    DRV.timer = null;
+    if (!DRV.on) return;
+    var now = performance.now(), list, busy = 0;
+    try { list = document.getAnimations(); } catch (e) { list = []; }
+    DRV.n++;
+    for (var i = 0; i < list.length; i++) {
+      var a = list[i];
+      if (DRV.done.has(a)) continue;
+      var rec = DRV.map.get(a);
+      if (!rec) {
+        if (a.playState === 'finished' || a.playState === 'idle' || !a.effect) continue;
+        var tm = a.effect.getTiming(), ct = a.effect.getComputedTiming();
+        rec = { base: a.currentTime || 0, t0: now, inf: tm.iterations === Infinity, end: ct.endTime, target: a.effect.target };
+        DRV.map.set(a, rec);
+        try { a.pause(); } catch (e) { /* */ }
+        promote(rec.target, true);
+      }
+      busy++;
+      if (rec.inf && DRV.n % 2) continue;                 /* bucles de fondo: 10 imágenes/s */
+      var t = rec.base + (now - rec.t0);
+      if (!rec.inf && t >= rec.end) {                      /* terminada: queda fija en su estado final */
+        /* +1 ms: el navegador redondea los tiempos a microsegundos y 80 ms + 10 ms puede
+           quedar en 89,9999 ms (todavía "dentro" de la animación); así queda siempre al
+           final. (finish() no sirve aquí: arrastra el mismo redondeo.) */
+        try { a.currentTime = rec.end + 1; } catch (e) { /* */ }
+        DRV.done.add(a); promote(rec.target, false); busy--;
+        release(a);
+        continue;
+      }
+      try { a.currentTime = t; } catch (e) { /* */ }
+    }
+    drvSchedule(busy ? MC_FRAME : 400);
+  }
+  /* Animación terminada: su estado final se fija en el propio elemento y la
+     animación se retira. Así el navegador deja de mantener su capa (menos memoria
+     y menos trabajo de composición en cada imagen) y el resultado es idéntico. */
+  function release(a) {
+    if (!a.cancel) return;
+    try {
+      if (window.CSSTransition && a instanceof window.CSSTransition) { a.cancel(); return; }   /* su valor final ya es el estilo base */
+      var fill = a.effect.getComputedTiming().fill;
+      var keeps = fill === 'forwards' || fill === 'both';
+      if (a.effect.pseudoElement) { if (!keeps) a.cancel(); return; }                 /* pseudo-elementos: se dejan tal cual */
+      if (keeps) { if (!a.commitStyles) return; a.commitStyles(); }
+      a.cancel();
+    } catch (e) { /* si el navegador no lo admite, queda pausada en su final (también correcto) */ }
+  }
+  function drvStart() {
+    if (!PF.canDrive || DRV.on) return;
+    DRV.on = true; DRV.map = new WeakMap(); DRV.done = new WeakSet(); DRV.n = 0;
+    drvSchedule(0);
+  }
+  function drvStop() {
+    if (!DRV.on) return;
+    DRV.on = false; clearTimeout(DRV.timer);
+    var list = []; try { list = document.getAnimations(); } catch (e) { /* */ }
+    list.forEach(function (a) {
+      var rec = DRV.map.get(a);
+      if (rec || DRV.done.has(a)) { try { a.play(); } catch (e) { /* */ } if (rec) promote(rec.target, false); }
+    });
+  }
+  /* Avisar al limitador de que acaban de empezar animaciones (cambio de escena,
+     gol en el marcador…) para atraparlas desde su primer instante */
+  PF.kick = function () {
+    if (!DRV.on) return;
+    clearTimeout(DRV.timer);
+    DRV.timer = setTimeout(drvTick, 0);
+  };
+  PF.driving = function () { return DRV.on; };
+
   /* Bucles ambientales a 30 fps (pasos discretos) en modo bajo */
   PF.tuneLoops = function (root) {
-    if (!root || !PF.low) return;
-    [root].concat(U.$$('*', root)).forEach(function (n) {
+    if (!root || !PF.low || DRV.on) return;   /* en modo Minecraft se encarga el limitador */
+    (VM.overlays && VM.overlays.animatedNodes ? VM.overlays.animatedNodes(root) : [root].concat(U.$$('*', root))).forEach(function (n) {
       var cs = getComputedStyle(n);
       if (!cs.animationName || cs.animationName === 'none') return;
       if (cs.animationIterationCount.indexOf('infinite') < 0) return;
@@ -2536,7 +2699,7 @@ VM.VERSION = "1.2.0";
 
   /* Parámetros de trabajo según el modo */
   PF.loopMs = function (overlayActive) { return PF.low ? (overlayActive ? 250 : 500) : 100; };
-  PF.crestMax = function () { return PF.low ? 640 : 0; };
+  PF.crestMax = function () { return PF.mc ? 512 : (PF.low ? 640 : 0); };
 })();
 
 /* ==========================================================================
@@ -2622,6 +2785,7 @@ VM.VERSION = "1.2.0";
     box.classList.remove('is-up', 'is-down');
     void box.offsetWidth;
     box.classList.add(dir === 'up' ? 'is-up' : 'is-down');
+    VM.perf.kick();
     setTimeout(function () { if (old.parentNode) old.parentNode.removeChild(old); box.classList.remove('is-up', 'is-down'); }, 900);
     if (dir === 'up') {
       var team = refs['name_' + side].parentNode;
@@ -2660,7 +2824,7 @@ VM.VERSION = "1.2.0";
       last.added = addTxt;
       refs.added.textContent = addTxt;
       refs.clock.classList.toggle('has-added', !!addTxt);
-      if (addTxt) { refs.added.classList.remove('is-new'); void refs.added.offsetWidth; refs.added.classList.add('is-new'); }
+      if (addTxt) { refs.added.classList.remove('is-new'); void refs.added.offsetWidth; refs.added.classList.add('is-new'); VM.perf.kick(); }
     }
     B.tick(state);
   };
@@ -2719,10 +2883,26 @@ VM.VERSION = "1.2.0";
 
   /* --------------------------- utilidades de animación --------------------------- */
   function parseTime(s) { s = s.trim(); return s.slice(-2) === 'ms' ? parseFloat(s) / 1000 : parseFloat(s) || 0; }
+  /* Elementos con animación: vía getAnimations si el navegador lo permite
+     (mucho más rápido que revisar todos los nodos); si no, recorrido completo */
+  function animatedNodes(root) {
+    if (root.getAnimations) {
+      try {
+        var seen = [];
+        root.getAnimations({ subtree: true }).forEach(function (a) {
+          var t = a.effect && a.effect.target;
+          if (t && !(a.effect.pseudoElement) && seen.indexOf(t) < 0) seen.push(t);
+        });
+        return seen;
+      } catch (e) { /* */ }
+    }
+    return [root].concat(U.$$('*', root));
+  }
+  O.animatedNodes = animatedNodes;
   O.applySkip = function (root, ms) {
     if (!(ms > 0)) return;
     var s = ms / 1000;
-    [root].concat(U.$$('*', root)).forEach(function (n) {
+    animatedNodes(root).forEach(function (n) {
       var cs = getComputedStyle(n);
       if (!cs.animationName || cs.animationName === 'none') return;
       n.style.animationDelay = cs.animationDelay.split(',').map(function (d) { return (parseTime(d) - s).toFixed(3) + 's'; }).join(', ');
@@ -2745,7 +2925,13 @@ VM.VERSION = "1.2.0";
 
   M.init = function (stage) {
     host = el('div', { class: 'ovl', id: 'ovl' });
-    wipe = el('div', { class: 'wipe', id: 'wipe' }, [el('i', { class: 'w-band' }), el('i', { class: 'w-edge w-e1' }), el('i', { class: 'w-edge w-e2' })]);
+    /* Cortinilla: banda diagonal (normal y bajos recursos) y, en modo Minecraft,
+       8 paneles que se encienden de uno en uno (en cada paso solo cambia 1/8 de la imagen) */
+    var slats = [];
+    for (var k = 0; k < 8; k++) {
+      slats.push(el('i', { class: 'w-slat', style: { left: (k * 12.5) + '%', '--di': (k * 40) + 'ms', '--do': (k * 45) + 'ms' } }));
+    }
+    wipe = el('div', { class: 'wipe', id: 'wipe' }, [el('i', { class: 'w-band' }), el('i', { class: 'w-edge w-e1' }), el('i', { class: 'w-edge w-e2' })].concat(slats));
     stage.appendChild(host);
     stage.appendChild(wipe);
   };
@@ -2759,10 +2945,12 @@ VM.VERSION = "1.2.0";
     wipe.className = 'wipe';
     void wipe.offsetWidth;
     wipe.className = 'wipe w-in';
+    VM.perf.kick();
     setTimeout(function () {
       try { onCovered(); } catch (e) { if (window.console) console.error(e); }
       setTimeout(function () {
         wipe.className = 'wipe w-out';
+        VM.perf.kick();
         setTimeout(function () {
           wipe.className = 'wipe';
           M.phase = 'idle';
@@ -2786,11 +2974,12 @@ VM.VERSION = "1.2.0";
     root.classList.add('ov', 'ov-' + p.tipo);
     host.appendChild(root);
     ctx.root = root;
-    F.refitAll();
+    F.refitIn(root);
     if (skipMs > 250) O.applySkip(root, skipMs);
     M.cur = { id: p.id, type: p.tipo, root: root, def: def, ctx: ctx, p: p, timers: ctx.timers, sig: JSON.stringify(p.datos || {}) };
     VM.perf.tuneLoops(root);
     VM.perf.startMeasure();
+    VM.perf.kick();
     if (def.tick) def.tick(ctx, Date.now() - ctx.start, true);
     VM.board.setVisible(false);
   }
@@ -2968,7 +3157,8 @@ VM.VERSION = "1.2.0";
       var dec = d.fase === 'decision';
       var root = r.rev.parentNode.parentNode.parentNode;
       if (root) root.classList.toggle('is-decision', dec);
-      F.refitAll();
+      F.refitIn(root);
+      VM.perf.kick();
     }
   });
 
@@ -3115,11 +3305,12 @@ VM.VERSION = "1.2.0";
         n.style.width = box + 'px'; n.style.height = box + 'px';
         n.style.fontSize = (box * (n.textContent.length > 1 ? 0.62 : 0.7)) + 'px';
       });
-      var max = Math.min(rowH * 0.5, (rb ? 17 : 8) * L.u), sizes = [];
-      nameBoxes.forEach(function (b) { var r = F.line(b, [b._txt], max, 1); if (r) sizes.push(r.size); });
-      if (!sizes.length) return;
-      var common = Math.max(Math.min.apply(null, sizes), max * 0.7);
-      nameBoxes.forEach(function (b, i) { var s = b._fitSpan; if (s) s.style.fontSize = Math.min(common, sizes[i]) + 'px'; });
+      var max = Math.min(rowH * 0.5, (rb ? 17 : 8) * L.u);
+      var sizes = F.batch(nameBoxes, nameBoxes.map(function (b) { return b._txt; }), max);
+      var valid = sizes.filter(function (x) { return x !== null; });
+      if (!valid.length) return;
+      var common = Math.max(Math.min.apply(null, valid), max * 0.7);
+      nameBoxes.forEach(function (b, i) { var s = b._fitSpan; if (s && sizes[i] !== null) s.style.fontSize = Math.min(common, sizes[i]) + 'px'; });
     });
     return panel;
   }
@@ -3140,9 +3331,10 @@ VM.VERSION = "1.2.0";
       if (prev) { var off = ctx.panels[prev]; off.classList.remove('is-on'); off.classList.add('is-leaving'); }
       var start = function () {
         on.classList.add('is-on');
-        F.refitAll();
+        F.refitIn(on);
         var into = elapsed - (phase === 'local' ? per : 0);
         if (first && into > 300) O.applySkip(on, into);
+        VM.perf.kick();
       };
       if (prev && !first) ctx.timers.push(setTimeout(start, 480)); else start();
     }
@@ -3443,7 +3635,7 @@ VM.VERSION = "1.2.0";
     },
     setPerf: function (mode) {
       return mutate(function (s) { if ((s.rendimiento || cfg().rendimiento) === mode && s.rendimiento) return false; s.rendimiento = mode; },
-        { toast: mode === 'bajo' ? 'Modo bajos recursos activado en todas las pantallas' : (mode === 'auto' ? 'Rendimiento automático: cada pantalla decide según su fluidez' : 'Modo normal en todas las pantallas') });
+        { toast: ({ bajo: 'Modo bajos recursos activado en todas las pantallas', minecraft: 'Modo Minecraft (MCEF) activado en todas las pantallas', auto: 'Rendimiento automático: cada pantalla decide según su fluidez' })[mode] || 'Modo normal en todas las pantallas' });
     },
     reloadScreens: function () { S.sendEvent('cmd', { tipo: 'recargar' }); toast('Orden de recarga enviada a las pantallas'); },
     reloadAssets: function () {
@@ -3713,10 +3905,11 @@ VM.VERSION = "1.2.0";
       '<section class="card" data-tab="ajustes"><div class="card-h"><h2>Rendimiento de las pantallas</h2><span class="badge" data-ref="perfBadge">Normal</span></div>' +
         '<div class="perf-opts" role="radiogroup" aria-label="Modo de rendimiento">' +
           '<button role="radio" class="perf-opt" data-act="setPerf" data-arg="normal"><b>Normal</b><small>Máxima fluidez. Para navegadores actuales.</small></button>' +
-          '<button role="radio" class="perf-opt" data-act="setPerf" data-arg="bajo"><b>Bajos recursos</b><small>Mismas animaciones y diseño con mucha menos carga. Para Minecraft, TV o equipos lentos.</small></button>' +
-          '<button role="radio" class="perf-opt" data-act="setPerf" data-arg="auto"><b>Automático</b><small>Cada pantalla mide su fluidez y activa bajos recursos si la necesita.</small></button>' +
+          '<button role="radio" class="perf-opt" data-act="setPerf" data-arg="bajo"><b>Bajos recursos</b><small>Mismas animaciones y diseño con mucha menos carga. Para TV u ordenadores lentos.</small></button>' +
+          '<button role="radio" class="perf-opt" data-act="setPerf" data-arg="minecraft"><b>Minecraft (MCEF)</b><small>Máximo ahorro para pantallas dentro del juego: todas las animaciones a 20 imágenes/s sincronizadas y cambios de escena por paneles.</small></button>' +
+          '<button role="radio" class="perf-opt" data-act="setPerf" data-arg="auto"><b>Automático</b><small>Cada pantalla mide su fluidez y sube de nivel (bajos recursos → Minecraft) si lo necesita.</small></button>' +
         '</div>' +
-        '<p class="hint">Se aplica al instante a todas las pantallas, sin recargar y sin detener el cronómetro. Para forzarlo en una sola pantalla, añade <code>&amp;rendimiento=bajo</code> a su dirección.</p>' +
+        '<p class="hint">Se aplica al instante a todas las pantallas, sin recargar y sin detener el cronómetro. Para fijarlo en una sola pantalla, añade a su dirección <code>&amp;rendimiento=minecraft</code> (o <code>=bajo</code>). Recomendado en todas las pantallas de Minecraft.</p>' +
       '</section>' +
       /* CONEXIÓN */
       '<section class="card" data-tab="ajustes"><div class="card-h"><h2>Conexión</h2></div>' +
@@ -3880,8 +4073,8 @@ VM.VERSION = "1.2.0";
     setText(R.clkAdd, s.descuento.visible && n ? '+' + n : '');
     var pm = s.rendimiento || cfg().rendimiento || 'normal';
     U.$$('.perf-opt').forEach(function (b) { var on = b.getAttribute('data-arg') === pm; b.classList.toggle('is-on', on); b.setAttribute('aria-checked', on ? 'true' : 'false'); });
-    setText(R.perfBadge, pm === 'bajo' ? 'Bajos recursos' : (pm === 'auto' ? 'Automático' : 'Normal'));
-    R.perfBadge.className = 'badge' + (pm === 'bajo' ? ' is-pause' : (pm === 'auto' ? ' is-live' : ''));
+    setText(R.perfBadge, ({ bajo: 'Bajos recursos', minecraft: 'Minecraft', auto: 'Automático' })[pm] || 'Normal');
+    R.perfBadge.className = 'badge' + (pm === 'bajo' || pm === 'minecraft' ? ' is-pause' : (pm === 'auto' ? ' is-live' : ''));
     var p = activeOverlay();
     U.$$('[data-tile]').forEach(function (tl) { tl.classList.toggle('is-live', !!p && p.tipo === tl.getAttribute('data-tile')); });
     R.varState.hidden = !(p && p.tipo === 'var');
@@ -3939,7 +4132,10 @@ VM.VERSION = "1.2.0";
     var rows = Object.keys(S.screens).map(function (k) {
       var s = S.screens[k], i = s.info || {}, ar = i.w && i.h ? (i.w / i.h).toFixed(2).replace('.', ',') : '?';
       var bad = i.cfg && i.cfg !== C.hash;
-      var perf = (i.bajo ? 'Bajos recursos' + (i.modo === 'auto' ? ' (automático)' : '') + (i.forzado ? ' (fijado en su dirección)' : '') : 'Rendimiento normal') +
+      var lvl = i.nivel || (i.bajo ? 'bajo' : 'normal');
+      var perf = (({ bajo: 'Bajos recursos', minecraft: 'Modo Minecraft' })[lvl] || 'Rendimiento normal') +
+        (lvl !== 'normal' && i.modo === 'auto' ? ' (automático)' : '') + (i.forzado ? ' (fijado en su dirección)' : '') +
+        (lvl === 'minecraft' && i.limitador === false ? ' · navegador antiguo: sin limitador' : '') +
         (i.fps ? ' · ' + i.fps + ' fps en animaciones' : '');
       var slow = i.fps && i.fps < 36 && !i.bajo;
       return '<div class="scr' + (bad || slow ? ' warn' : '') + '"><i class="led ' + (bad || slow ? 'wait' : 'ok') + '"></i><div><b>' + i.w + '×' + i.h + ' px · ' + ar + ':1</b><small>' + U.esc(k.slice(0, 6)) + ' · ' + U.esc(s.via.replace('mqtt:', '')) + ' · ' + U.esc(perf) + '</small></div><span>' +

@@ -128,11 +128,13 @@ window.VIDEOMARCADOR_CONFIG = {
 
   /* Rendimiento de las pantallas:
        "normal" → todo a máxima fluidez.
-       "bajo"   → modo bajos recursos para navegadores poco potentes (Minecraft,
-                  TV, equipos antiguos): mismas animaciones y diseño, menos carga.
-       "auto"   → mide la fluidez y activa el modo bajos recursos si hace falta.
+       "bajo"   → modo bajos recursos para navegadores poco potentes (TV,
+                  equipos antiguos): mismas animaciones y diseño, menos carga.
+       "minecraft" → máximo ahorro para pantallas dentro de Minecraft (MCEF):
+                  todas las animaciones a 20 imágenes/s y cambios de escena por paneles.
+       "auto"   → mide la fluidez y sube de nivel por sí solo si hace falta.
      También se cambia en directo desde el panel (Ajustes → Rendimiento) o por
-     pantalla añadiendo ?rendimiento=bajo a su dirección.                    */
+     pantalla añadiendo ?rendimiento=minecraft (o =bajo) a su dirección.                    */
   rendimiento: "normal",
 
   /* Sincronización en tiempo real entre el panel y todas las pantallas.

@@ -192,27 +192,59 @@ tamaños de bloques de Minecraft).
 
 ---
 
-## 8. Modo «bajos recursos»
+## 8. Rendimiento: «Bajos recursos» y modo «Minecraft (MCEF)»
 
-Para navegadores con poca potencia (pantallas de Minecraft con MCEF/WebDisplays, televisores,
-ordenadores antiguos). **No quita ninguna animación ni cambia el diseño**; reduce el trabajo:
+Ninguno de los dos modos quita animaciones ni cambia el diseño: reducen el trabajo del navegador.
 
-- Los bucles continuos (filas de «GOL», teletipo del tour, barrido y barra del VAR, onda del
-  penalti, brillo de la bienvenida) se entregan a 30 imágenes/s sincronizadas en lugar de 60,
-  conservando su recorrido y su curva de aceleración. En Minecraft cada imagen nueva se copia a
-  la textura del juego, así que esto **reduce a la mitad** ese trabajo.
-- El cronómetro solo se redibuja justo cuando cambia el segundo (1 vez/s en lugar de 10).
-- Los escudos muy grandes se redimensionan una vez al tamaño al que se muestran.
-- Las tareas de fondo se espacian (comprobación de `config.js` cada 30 s como mínimo).
-- Las entradas, golpes de efecto y transiciones siguen a máxima fluidez.
+**Bajos recursos** (TV, ordenadores antiguos):
+- Los bucles continuos (filas de «GOL», teletipo, VAR, penalti, bienvenida) se entregan a 30
+  imágenes/s sincronizadas en lugar de 60, con el mismo recorrido y curva.
+- El cronómetro se redibuja solo al cambiar el segundo; escudos grandes reducidos una vez a su
+  tamaño real; tareas de fondo espaciadas.
 
-Cómo activarlo:
-- **Panel → Ajustes → Rendimiento de las pantallas:** Normal, Bajos recursos o Automático.
-  Se aplica al instante a todas las pantallas, sin recargar y sin detener el cronómetro.
-- **Automático:** cada pantalla mide su fluidez durante las animaciones y, si no llega, activa el
-  modo por sí sola. La lista de pantallas del panel muestra los fps y el modo de cada una.
-- **Solo una pantalla:** añade `&rendimiento=bajo` a su dirección.
+**Minecraft (MCEF)** — para pantallas dentro de Minecraft Java Edition (MCEF, WebDisplays…).
+Esos navegadores dibujan fuera de pantalla y copian cada imagen nueva a una textura del juego en
+el hilo de Minecraft: cuantas más imágenes y más superficie cambian, más tirones. Además de todo
+lo de «Bajos recursos»:
+- **Limitador global de fotogramas:** todas las animaciones (entradas, transiciones y bucles)
+  avanzan juntas desde un único reloj: 20 imágenes/s, y los bucles de fondo a 10. Cada animación
+  conserva su curva, su duración y su sincronía con las demás pantallas.
+- **Cambio de escena por paneles:** la cortinilla diagonal se sustituye por 8 paneles que se
+  encienden y apagan de uno en uno (en cada paso solo cambia 1/8 de la imagen). El contenido
+  nuevo se monta con la pantalla tapada, así que nunca se ve un salto.
+- **Capas liberadas:** al terminar cada animación su estado final se fija y el navegador deja de
+  componerla; los elementos en movimiento van en capas propias para no repintar texto.
+- Escudos reducidos a 512 px y montaje de escenas más rápido (ajuste de textos por lotes).
+
+Medido en una pantalla de 35×7 bloques (1120×224) con el procesador ralentizado ×6:
+
+| Escena | Normal | Bajos recursos | Minecraft |
+|---|---|---|---|
+| GOL (entrada) | 56 imágenes/s | 41 | **16** |
+| GOL (fase fija) | 60 | 30 | **11** |
+| Cambio de escena | 44 | 44 | **18** |
+| VAR / Penalti | 60 | 30 | **11** |
+
+Si un navegador muy antiguo no tiene las funciones necesarias para el limitador, el modo
+Minecraft aplica automáticamente todo lo de «Bajos recursos» y la cortinilla por paneles.
+
+**Cómo activarlo**
+- **Panel → Ajustes → Rendimiento de las pantallas:** Normal, Bajos recursos, Minecraft (MCEF) o
+  Automático. Se aplica al instante a todas las pantallas, sin recargar ni detener el cronómetro.
+- **Recomendado para cada pantalla de Minecraft:** añade `&rendimiento=minecraft` a su dirección,
+  así esa pantalla siempre va en modo Minecraft aunque el resto esté en normal.
+- **Automático:** cada pantalla mide su fluidez durante las animaciones y sube de nivel sola
+  (normal → bajos recursos → Minecraft). La lista de pantallas del panel muestra el nivel y los
+  fps de cada una.
 - **Por defecto:** `rendimiento` en `config.js`.
+
+**Consejos para Minecraft (MCEF / WebDisplays)**
+- Usa la resolución más baja que se lea bien en la pantalla del juego: el videomarcador se adapta
+  a cualquier tamaño y sigue siendo legible incluso a 560×112 en una pantalla de 35×7 bloques.
+  Menos píxeles = menos trabajo de copia en cada imagen.
+- Si el mod permite limitar los fps del navegador, 20-30 es suficiente con el modo Minecraft.
+- Varias pantallas grandes con el mismo marcador multiplican el coste: si es posible, usa una
+  sola pantalla por zona del estadio.
 
 ---
 
@@ -226,7 +258,7 @@ Cómo activarlo:
 | `modo` | `&modo=local` | `auto`, `local` o `firebase` |
 | `broker` | `&broker=wss://mi-broker:8084/mqtt` | Servidor MQTT propio (separa varios con comas) |
 | `firebase` | `&firebase=https://…firebasedatabase.app` | URL de Firebase |
-| `rendimiento` | `&rendimiento=bajo` | `normal`, `bajo` o `auto` solo para esa pantalla |
+| `rendimiento` | `&rendimiento=minecraft` | `normal`, `bajo`, `minecraft` o `auto` solo para esa pantalla |
 | `debug` | `&debug=1` | Muestra datos técnicos en la pantalla |
 
 ---
@@ -262,8 +294,8 @@ misma interfaz que los de `VM.transports`.
   mismo ordenador siguen funcionando. Usa Firebase o otra red.
 - **Cambié config.js y no veo cambios:** espera 15 s o pulsa «Recargar config.js y escudos» y
   después «Recargar pantallas».
-- **Las animaciones van a tirones en Minecraft o en la TV:** activa «Bajos recursos» (o «Automático»)
-  en Panel → Ajustes.
+- **Tirones en Minecraft:** activa «Minecraft (MCEF)» (o añade `&rendimiento=minecraft` a la dirección
+  de esa pantalla) y baja la resolución del navegador del mod. En TV u ordenadores lentos: «Bajos recursos».
 - **Escudo con recuadro blanco:** usa PNG transparente o publica la web (en `file://` el
   navegador no permite analizar la imagen para quitar el fondo).
 
