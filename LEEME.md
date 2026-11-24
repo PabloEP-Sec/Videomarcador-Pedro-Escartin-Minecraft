@@ -164,8 +164,15 @@ una clave solo en las direcciones (no en `config.js`, que es público si publica
 - Las animaciones arrancan sincronizadas en todas las pantallas; una pantalla que se conecta
   tarde se incorpora en el punto exacto de la animación.
 
+**El panel** se organiza en 4 secciones: **Partido** (marcador, cronómetro, descuento),
+**Pantallas** (vista previa, animaciones, tarjetas, VAR), **Equipos** y **Ajustes**. En el móvil
+las secciones están en la barra inferior; en tablet y ordenador, arriba (en ordenador «Partido» y
+«Pantallas» se ven juntas como «En directo»). La franja superior «en directo» está siempre
+visible: resultado, cronómetro (tócalo para iniciar/pausar) y la pantalla que se está mostrando,
+con «+10 s», «Mantener» y «Volver al marcador».
+
 **Atajos del panel (teclado):** `Espacio` iniciar/pausar · `L` gol local · `V` gol visitante ·
-`Esc` volver al marcador · `Ctrl+Z` deshacer. En el móvil hay una barra fija con lo esencial.
+`Esc` volver al marcador · `Ctrl+Z` deshacer · `1`–`4` cambiar de sección.
 
 ---
 
@@ -185,7 +192,31 @@ tamaños de bloques de Minecraft).
 
 ---
 
-## 8. Parámetros de dirección
+## 8. Modo «bajos recursos»
+
+Para navegadores con poca potencia (pantallas de Minecraft con MCEF/WebDisplays, televisores,
+ordenadores antiguos). **No quita ninguna animación ni cambia el diseño**; reduce el trabajo:
+
+- Los bucles continuos (filas de «GOL», teletipo del tour, barrido y barra del VAR, onda del
+  penalti, brillo de la bienvenida) se entregan a 30 imágenes/s sincronizadas en lugar de 60,
+  conservando su recorrido y su curva de aceleración. En Minecraft cada imagen nueva se copia a
+  la textura del juego, así que esto **reduce a la mitad** ese trabajo.
+- El cronómetro solo se redibuja justo cuando cambia el segundo (1 vez/s en lugar de 10).
+- Los escudos muy grandes se redimensionan una vez al tamaño al que se muestran.
+- Las tareas de fondo se espacian (comprobación de `config.js` cada 30 s como mínimo).
+- Las entradas, golpes de efecto y transiciones siguen a máxima fluidez.
+
+Cómo activarlo:
+- **Panel → Ajustes → Rendimiento de las pantallas:** Normal, Bajos recursos o Automático.
+  Se aplica al instante a todas las pantallas, sin recargar y sin detener el cronómetro.
+- **Automático:** cada pantalla mide su fluidez durante las animaciones y, si no llega, activa el
+  modo por sí sola. La lista de pantallas del panel muestra los fps y el modo de cada una.
+- **Solo una pantalla:** añade `&rendimiento=bajo` a su dirección.
+- **Por defecto:** `rendimiento` en `config.js`.
+
+---
+
+## 9. Parámetros de dirección
 
 | Parámetro | Ejemplo | Uso |
 |---|---|---|
@@ -195,11 +226,12 @@ tamaños de bloques de Minecraft).
 | `modo` | `&modo=local` | `auto`, `local` o `firebase` |
 | `broker` | `&broker=wss://mi-broker:8084/mqtt` | Servidor MQTT propio (separa varios con comas) |
 | `firebase` | `&firebase=https://…firebasedatabase.app` | URL de Firebase |
+| `rendimiento` | `&rendimiento=bajo` | `normal`, `bajo` o `auto` solo para esa pantalla |
 | `debug` | `&debug=1` | Muestra datos técnicos en la pantalla |
 
 ---
 
-## 9. Ampliar el proyecto
+## 10. Ampliar el proyecto
 
 `index.html` está organizado por módulos comentados (`VM.config`, `VM.time`, `VM.sync`,
 `VM.transports`, `VM.crest`, `VM.board`, `VM.overlays`, `VM.panel`…).
@@ -222,7 +254,7 @@ misma interfaz que los de `VM.transports`.
 
 ---
 
-## 10. Solución de problemas
+## 11. Solución de problemas
 
 - **Una pantalla no se actualiza:** comprueba que usa la misma `sala` (y `clave`) que el panel.
   En el panel, «Conexión y pantallas» lista las pantallas conectadas.
@@ -230,6 +262,8 @@ misma interfaz que los de `VM.transports`.
   mismo ordenador siguen funcionando. Usa Firebase o otra red.
 - **Cambié config.js y no veo cambios:** espera 15 s o pulsa «Recargar config.js y escudos» y
   después «Recargar pantallas».
+- **Las animaciones van a tirones en Minecraft o en la TV:** activa «Bajos recursos» (o «Automático»)
+  en Panel → Ajustes.
 - **Escudo con recuadro blanco:** usa PNG transparente o publica la web (en `file://` el
   navegador no permite analizar la imagen para quitar el fondo).
 

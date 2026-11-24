@@ -126,6 +126,15 @@ window.VIDEOMARCADOR_CONFIG = {
     tour: 0
   },
 
+  /* Rendimiento de las pantallas:
+       "normal" → todo a máxima fluidez.
+       "bajo"   → modo bajos recursos para navegadores poco potentes (Minecraft,
+                  TV, equipos antiguos): mismas animaciones y diseño, menos carga.
+       "auto"   → mide la fluidez y activa el modo bajos recursos si hace falta.
+     También se cambia en directo desde el panel (Ajustes → Rendimiento) o por
+     pantalla añadiendo ?rendimiento=bajo a su dirección.                    */
+  rendimiento: "normal",
+
   /* Sincronización en tiempo real entre el panel y todas las pantallas.
        "auto"     → misma máquina (instantáneo) + brokers MQTT públicos gratuitos.
                     No necesita cuentas ni instalar nada. Recomendado.
